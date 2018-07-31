@@ -59,7 +59,7 @@ struct radix_tree_node {
 	其中tags[0]为PAGE_CACHE_DIRTY，tags[1]为PAGE_CACHE_WRITEBACK。
 	如果当前节点的tags[0]值为1，那么它的子树节点就存在PAGE_CACHE_DIRTY节点，否则这个子树分枝就不存在着这样的节点，就不必再查找这个子树了。
 	比如在查找PG_dirty的页面时，就不需要遍历整个树，而可以跳过那些tags[0]为0值的子树，这样就提高了查找效率。*/
-	unsigned long	tags[RADIX_TREE_MAX_TAGS][RADIX_TREE_TAG_LONGS];
+	unsigned long	tags[RADIX_TREE_MAX_TAGS][RADIX_TREE_TAG_LONGS]; //两个64位数组，第一个数组是脏标记，第二个是写回标记。
 };
 
 struct radix_tree_path {
@@ -466,10 +466,11 @@ void *radix_tree_tag_set(struct radix_tree_root *root,
 	height = root->height;
 	BUG_ON(index > radix_tree_maxindex(height));
 
+	//slot是radix树的第一个节点
 	slot = radix_tree_indirect_to_ptr(root->rnode);
 	shift = (height - 1) * RADIX_TREE_MAP_SHIFT;
 
-	while (height > 0) {
+	while (height > 0) { //设置标志，从顶层到底层依次设置
 		int offset;
 
 		offset = (index >> shift) & RADIX_TREE_MAP_MASK;

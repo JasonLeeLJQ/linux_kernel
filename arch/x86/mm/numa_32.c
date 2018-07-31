@@ -197,6 +197,7 @@ void *alloc_remap(int nid, unsigned long size)
 		return NULL;
 
 	node_remap_alloc_vaddr[nid] += size;
+	//将长度为size的空间填充0，allocation存放的是物理内存中所有的page描述符
 	memset(allocation, 0, size);
 
 	return allocation;

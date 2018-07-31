@@ -639,7 +639,7 @@ struct address_space {
 	unsigned int		truncate_count;	/* 截断文件时使用的顺序计数器*/
 	unsigned long		nrpages;	/*  页总数 */
 	pgoff_t			writeback_index;/* 最后一次回写操作所作用的页的索引*/
-	const struct address_space_operations *a_ops;	/* 对所有者页进行操作的方法*/
+	const struct address_space_operations *a_ops;	/* 对所有者页进行操作的方法，每一个文件系统都有一个这样的结构体，里面是具体的函数实现*/
 	unsigned long		flags;		/* error bits/gfp mask */
 	struct backing_dev_info *backing_dev_info; /* device readahead, etc */
 	spinlock_t		private_lock;	/* for use by the address_space */
@@ -733,34 +733,34 @@ struct inode {
 	struct hlist_node	i_hash;
 	struct list_head	i_list;		/* backing dev IO list */
 	struct list_head	i_sb_list;
-	struct list_head	i_dentry;
-	unsigned long		i_ino;
-	atomic_t		i_count;
-	unsigned int		i_nlink;
+	struct list_head	i_dentry;  //指向引用索引节点的dentry对象链表的头部
+	unsigned long		i_ino;   //索引节点号
+	atomic_t		i_count;   //引用计数
+	unsigned int		i_nlink;  //硬链接数目
 	uid_t			i_uid;
 	gid_t			i_gid;
 	dev_t			i_rdev;
 	unsigned int		i_blkbits;
 	u64			i_version;
-	loff_t			i_size;
+	loff_t			i_size;   //文件的字节数
 #ifdef __NEED_I_SIZE_ORDERED
 	seqcount_t		i_size_seqcount;
 #endif
 	struct timespec		i_atime;
 	struct timespec		i_mtime;
 	struct timespec		i_ctime;
-	blkcnt_t		i_blocks;
-	unsigned short          i_bytes;
+	blkcnt_t		i_blocks;   //文件的块数
+	unsigned short          i_bytes;  //文件最后一块的字节数
 	umode_t			i_mode;
 	spinlock_t		i_lock;	/* i_blocks, i_bytes, maybe i_size */
 	struct mutex		i_mutex;
 	struct rw_semaphore	i_alloc_sem;
-	const struct inode_operations	*i_op;
-	const struct file_operations	*i_fop;	/* former ->i_op->default_file_ops */
-	struct super_block	*i_sb;
+	const struct inode_operations	*i_op;  //inode的操作
+	const struct file_operations	*i_fop;	/* former ->i_op->default_file_ops 默认的文件操作*/
+	struct super_block	*i_sb;  //指向超级块对象
 	struct file_lock	*i_flock;
-	struct address_space	*i_mapping;
-	struct address_space	i_data;
+	struct address_space	*i_mapping;  //指向页高速缓存
+	struct address_space	i_data;  //文件的页高速缓存对象
 #ifdef CONFIG_QUOTA
 	struct dquot		*i_dquot[MAXQUOTAS];
 #endif
@@ -771,7 +771,7 @@ struct inode {
 		struct cdev		*i_cdev;
 	};
 
-	__u32			i_generation;
+	__u32			i_generation;  //inode的版本号（由某些文件系统使用）
 
 #ifdef CONFIG_FSNOTIFY
 	__u32			i_fsnotify_mask; /* all events this inode cares about */
@@ -783,12 +783,12 @@ struct inode {
 	struct mutex		inotify_mutex;	/* protects the watches list */
 #endif
 
-	unsigned long		i_state;
+	unsigned long		i_state;  //索引节点的状态标志
 	unsigned long		dirtied_when;	/* jiffies of first dirtying */
 
-	unsigned int		i_flags;
+	unsigned int		i_flags;  //文件系统的安装标志
 
-	atomic_t		i_writecount;
+	atomic_t		i_writecount;  //用于写进程的引用计数器
 #ifdef CONFIG_SECURITY
 	void			*i_security;
 #endif
@@ -796,7 +796,7 @@ struct inode {
 	struct posix_acl	*i_acl;
 	struct posix_acl	*i_default_acl;
 #endif
-	void			*i_private; /* fs or device private pointer */
+	void			*i_private; /* fs or device private pointer 文件系统或设备的私有指针*/
 };
 
 /*
@@ -924,23 +924,23 @@ struct file {
 	 * fu_rcuhead for RCU freeing
 	 */
 	union {
-		struct list_head	fu_list;
+		struct list_head	fu_list;  //文件对象组成的链表
 		struct rcu_head 	fu_rcuhead;
 	} f_u;
 	struct path		f_path;
-#define f_dentry	f_path.dentry
-#define f_vfsmnt	f_path.mnt
-	const struct file_operations	*f_op;
+#define f_dentry	f_path.dentry  //与file相关的目录项对象
+#define f_vfsmnt	f_path.mnt     //含有该文件的已安装文件系统
+	const struct file_operations	*f_op;  //文件的操作
 	spinlock_t		f_lock;  /* f_ep_links, f_flags, no IRQ */
-	atomic_long_t		f_count;
-	unsigned int 		f_flags;
-	fmode_t			f_mode;
-	loff_t			f_pos;
+	atomic_long_t		f_count;  //文件的引用计数
+	unsigned int 		f_flags;  //打开文件指定的标志
+	fmode_t			f_mode;    //进程的访问模式
+	loff_t			f_pos;  //当前文件的文件指针的偏移量
 	struct fown_struct	f_owner;
 	const struct cred	*f_cred;
-	struct file_ra_state	f_ra;
+	struct file_ra_state	f_ra;  //文件预读的状态
 
-	u64			f_version;
+	u64			f_version;  //版本号，每次使用后递增
 #ifdef CONFIG_SECURITY
 	void			*f_security;
 #endif
@@ -951,7 +951,7 @@ struct file {
 	/* Used by fs/eventpoll.c to link all the hooks to this file */
 	struct list_head	f_ep_links;
 #endif /* #ifdef CONFIG_EPOLL */
-	struct address_space	*f_mapping;
+	struct address_space	*f_mapping;  //指向文件的页高速缓存
 #ifdef CONFIG_DEBUG_WRITECOUNT
 	unsigned long f_mnt_write_state;
 #endif
@@ -1325,23 +1325,23 @@ extern spinlock_t sb_lock;
 #define sb_entry(list)  list_entry((list), struct super_block, s_list)
 #define S_BIAS (1<<30)
 struct super_block {
-	struct list_head	s_list;		/* Keep this first */
-	dev_t			s_dev;		/* search index; _not_ kdev_t */
-	unsigned char		s_dirt;
-	unsigned char		s_blocksize_bits;
-	unsigned long		s_blocksize;
-	loff_t			s_maxbytes;	/* Max file size */
-	struct file_system_type	*s_type;
-	const struct super_operations	*s_op;
+	struct list_head	s_list;		/* Keep this first 指向超级块链表*/
+	dev_t			s_dev;		/* search index; _not_ kdev_t 设备标识符*/
+	unsigned char		s_dirt;   //修改（脏）标志
+	unsigned char		s_blocksize_bits; //以bit为单位的块大小
+	unsigned long		s_blocksize;  //以字节为单位的块大小
+	loff_t			s_maxbytes;	/* Max file size 文件的最长长度*/
+	struct file_system_type	*s_type;  //文件系统类型
+	const struct super_operations	*s_op;  //超级块的方法
 	const struct dquot_operations	*dq_op;
 	const struct quotactl_ops	*s_qcop;
 	const struct export_operations *s_export_op;
 	unsigned long		s_flags;
 	unsigned long		s_magic;
-	struct dentry		*s_root;
+	struct dentry		*s_root;  //文件系统根目录的目录项对象
 	struct rw_semaphore	s_umount;
 	struct mutex		s_lock;
-	int			s_count;
+	int			s_count;  //引用计数器
 	int			s_need_sync;
 	atomic_t		s_active;
 #ifdef CONFIG_SECURITY
@@ -1349,9 +1349,9 @@ struct super_block {
 #endif
 	struct xattr_handler	**s_xattr;
 
-	struct list_head	s_inodes;	/* all inodes */
+	struct list_head	s_inodes;	/* all inodes 所有索引节点的链表*/
 	struct hlist_head	s_anon;		/* anonymous dentries for (nfs) exporting */
-	struct list_head	s_files;
+	struct list_head	s_files;   /* 文件对象的链表 */
 	/* s_dentry_lru and s_nr_dentry_unused are protected by dcache_lock */
 	struct list_head	s_dentry_lru;	/* unused dentry lru */
 	int			s_nr_dentry_unused;	/* # of dentry on lru */
@@ -1365,9 +1365,9 @@ struct super_block {
 	int			s_frozen;
 	wait_queue_head_t	s_wait_unfrozen;
 
-	char s_id[32];				/* Informational name */
+	char s_id[32];				/* Informational name 包含该超级块的块设备名称*/
 
-	void 			*s_fs_info;	/* Filesystem private info */
+	void 			*s_fs_info;	/* Filesystem private info 指向特定文件系统的超级块信息的指针*/
 	fmode_t			s_mode;
 
 	/* Granularity of c/m/atime in ns.

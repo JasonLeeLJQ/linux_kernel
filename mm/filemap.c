@@ -963,6 +963,7 @@ static void shrink_readahead_size_eio(struct file *filp,
 }
 
 /**
+	从文件中读数据
  * do_generic_file_read - generic file read routine
  * @filp:	the file to read
  * @ppos:	current file position
@@ -988,7 +989,7 @@ static void do_generic_file_read(struct file *filp, loff_t *ppos,
 	unsigned int prev_offset;
 	int error;
 
-	index = *ppos >> PAGE_CACHE_SHIFT;
+	index = *ppos >> PAGE_CACHE_SHIFT;  //ppos是字节，转换成 逻辑页号（地址空间中的页索引）
 	prev_index = ra->prev_pos >> PAGE_CACHE_SHIFT;
 	prev_offset = ra->prev_pos & (PAGE_CACHE_SIZE-1);
 	last_index = (*ppos + desc->count + PAGE_CACHE_SIZE-1) >> PAGE_CACHE_SHIFT;
@@ -1002,7 +1003,7 @@ static void do_generic_file_read(struct file *filp, loff_t *ppos,
 
 		cond_resched();
 find_page:
-		page = find_get_page(mapping, index);
+		page = find_get_page(mapping, index); //在页高速缓存中查找该页描述符
 		if (!page) {
 			page_cache_sync_readahead(mapping,
 					ra, filp,
@@ -1016,7 +1017,9 @@ find_page:
 					ra, filp, page,
 					index, last_index - index);
 		}
-		if (!PageUptodate(page)) {
+		
+		//该页在高速缓存中存在，检查PG_uptodate标志，如果置位说明数据是最新的，无需从磁盘读数据。
+		if (!PageUptodate(page)) {  
 			if (inode->i_blkbits == PAGE_CACHE_SHIFT ||
 					!mapping->a_ops->is_partially_uptodate)
 				goto page_not_up_to_date;
@@ -1045,7 +1048,7 @@ page_ok:
 		}
 
 		/* nr is the maximum number of bytes to copy from this page */
-		nr = PAGE_CACHE_SIZE;
+		nr = PAGE_CACHE_SIZE;  //需要拷贝到用户空间的总字节数
 		if (index == end_index) {
 			nr = ((isize - 1) & ~PAGE_CACHE_MASK) + 1;
 			if (nr <= offset) {
@@ -1067,7 +1070,7 @@ page_ok:
 		 * only mark it as accessed the first time.
 		 */
 		if (prev_index != index || offset != prev_offset)
-			mark_page_accessed(page);
+			mark_page_accessed(page);  //将PG——active置位，在访问期间不允许换出
 		prev_index = index;
 
 		/*
@@ -1113,7 +1116,7 @@ page_not_up_to_date_locked:
 
 readpage:
 		/* Start the actual read. The read will unlock the page. */
-		error = mapping->a_ops->readpage(filp, page);
+		error = mapping->a_ops->readpage(filp, page);  //调用address_space对象的readpage方法，执行I/O操作，从磁盘读到内存
 
 		if (unlikely(error)) {
 			if (error == AOP_TRUNCATED_PAGE) {
@@ -1157,11 +1160,13 @@ no_cached_page:
 		 * Ok, it wasn't cached, so we need to create a new
 		 * page..
 		 */
+		 //页高速缓存中没有该页描述符，则申请一个页描述符
 		page = page_cache_alloc_cold(mapping);
 		if (!page) {
 			desc->error = -ENOMEM;
 			goto out;
 		}
+		//将新页描述符插入页高速缓存中
 		error = add_to_page_cache_lru(page, mapping,
 						index, GFP_KERNEL);
 		if (error) {
@@ -1206,9 +1211,9 @@ int file_read_actor(read_descriptor_t *desc, struct page *page,
 	}
 
 	/* Do it the slow way */
-	kaddr = kmap(page);
+	kaddr = kmap(page);  //建立永久内核映射，因为该page位于高端内存页框，必须转成内核的线性地址，才可以进行传输
 	left = __copy_to_user(desc->arg.buf, kaddr + offset, size);
-	kunmap(page);
+	kunmap(page);  //拷贝完毕，取消永久内核映射，释放空间
 
 	if (left) {
 		size -= left;
@@ -2216,7 +2221,7 @@ static ssize_t generic_perform_write(struct file *file,
 	 * Copies from kernel address space cannot fail (NFSD is a big user).
 	 */
 	if (segment_eq(get_fs(), KERNEL_DS))
-		flags |= AOP_FLAG_UNINTERRUPTIBLE;
+		flags |= AOP_FLAG_UNINTERRUPTIBLE;  //不可中断
 
 	do {
 		struct page *page;
@@ -2226,10 +2231,10 @@ static ssize_t generic_perform_write(struct file *file,
 		size_t copied;		/* Bytes copied from user */
 		void *fsdata;
 
-		offset = (pos & (PAGE_CACHE_SIZE - 1));
-		index = pos >> PAGE_CACHE_SHIFT;
+		offset = (pos & (PAGE_CACHE_SIZE - 1)); //为在页面内的偏移。
+		index = pos >> PAGE_CACHE_SHIFT;  //当前pos位置在pagecache的索引（以页面大小为单位）
 		bytes = min_t(unsigned long, PAGE_CACHE_SIZE - offset,
-						iov_iter_count(i));
+						iov_iter_count(i));  //要从用户空间拷贝的数据大小。
 
 again:
 
@@ -2256,12 +2261,13 @@ again:
 		if (mapping_writably_mapped(mapping))
 			flush_dcache_page(page);
 
-		pagefault_disable();
+		pagefault_disable(); //关闭页面中断
+		//先将待写的数据从用户态拷到内核里面的空间
 		copied = iov_iter_copy_from_user_atomic(page, i, offset, bytes);
-		pagefault_enable();
+		pagefault_enable(); //使能页面中断
 		flush_dcache_page(page);
 
-		mark_page_accessed(page);
+		mark_page_accessed(page); //并标记页面被访问、为内存回收算法更新页状态
 		status = a_ops->write_end(file, mapping, pos, bytes, copied,
 						page, fsdata);
 		if (unlikely(status < 0))
@@ -2270,7 +2276,9 @@ again:
 
 		cond_resched();
 
+		//更新iov_iter结构体里的信息，包括文件的位置、写数据大小、数据所在位置
 		iov_iter_advance(i, copied);
+		//若copied值为0，说明没能将数据从用户态拷贝到内核态，就要再次尝试写操作
 		if (unlikely(copied == 0)) {
 			/*
 			 * If we were unable to copy any data at all, we must
@@ -2284,7 +2292,7 @@ again:
 						iov_iter_single_seg_count(i));
 			goto again;
 		}
-		pos += copied;
+		pos += copied; //更新文件位置pos和已完成写的数据大小
 		written += copied;
 
 		balance_dirty_pages_ratelimited(mapping);
@@ -2303,7 +2311,9 @@ generic_file_buffered_write(struct kiocb *iocb, const struct iovec *iov,
 	ssize_t status;
 	struct iov_iter i;
 
+	//定义新的结构体struct iov_iter，将写文件的信息，如位置、写数据大小、数据所在位置做进一步封装
 	iov_iter_init(&i, iov, nr_segs, count, written);
+	//执行写操作
 	status = generic_perform_write(file, &i, pos);
 
 	if (likely(status >= 0)) {
@@ -2347,6 +2357,8 @@ ssize_t __generic_file_aio_write(struct kiocb *iocb, const struct iovec *iov,
 	ssize_t		err;
 
 	ocount = 0;
+
+	//写入之前执行必要的检查，检查缓冲区的有效性
 	err = generic_segment_checks(iov, &nr_segs, &ocount, VERIFY_READ);
 	if (err)
 		return err;
@@ -2367,13 +2379,16 @@ ssize_t __generic_file_aio_write(struct kiocb *iocb, const struct iovec *iov,
 	if (count == 0)
 		goto out;
 
+	//将文件suid标志清0
 	err = file_remove_suid(file);
 	if (err)
 		goto out;
 
+	//更新文件的访问时间
 	file_update_time(file);
 
 	/* coalesce the iovecs and go direct-to-BIO for O_DIRECT */
+	//O_DIRECT：直接写到磁盘，不经过缓存的情况
 	if (unlikely(file->f_flags & O_DIRECT)) {
 		loff_t endbyte;
 		ssize_t written_buffered;
@@ -2421,7 +2436,7 @@ ssize_t __generic_file_aio_write(struct kiocb *iocb, const struct iovec *iov,
 			 * the number of bytes which were direct-written
 			 */
 		}
-	} else {
+	} else { //写到页高速缓存的情况
 		written = generic_file_buffered_write(iocb, iov, nr_segs,
 				pos, ppos, count, written);
 	}
@@ -2451,14 +2466,14 @@ ssize_t generic_file_aio_write(struct kiocb *iocb, const struct iovec *iov,
 
 	BUG_ON(iocb->ki_pos != pos);
 
-	mutex_lock(&inode->i_mutex);
+	mutex_lock(&inode->i_mutex); //加锁，在这期间不允许其他进程对该文件进行write
 	ret = __generic_file_aio_write(iocb, iov, nr_segs, &iocb->ki_pos);
 	mutex_unlock(&inode->i_mutex);
 
 	if (ret > 0 || ret == -EIOCBQUEUED) {
 		ssize_t err;
 
-		err = generic_write_sync(file, pos, ret);
+		err = generic_write_sync(file, pos, ret); //将数据刷新到磁盘上
 		if (err < 0 && ret > 0)
 			ret = err;
 	}

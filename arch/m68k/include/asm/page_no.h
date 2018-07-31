@@ -59,13 +59,24 @@ extern unsigned long memory_end;
 #define __pa(vaddr)		((unsigned long)(vaddr))
 #define __va(paddr)		((void *)(paddr))
 
+/* 全局变量mem_map管理着所有的内存页，是一个数组
+	所有的页描述符都存放在mem_map中
+	struct page* mem_map;
+*/
+
+//虚拟地址（线性地址）kaddr -> pfn页框号
 #define virt_to_pfn(kaddr)	(__pa(kaddr) >> PAGE_SHIFT)
+//pfn页框号 -> 线性地址
 #define pfn_to_virt(pfn)	__va((pfn) << PAGE_SHIFT)
 
+//线性地址 -> page描述符
 #define virt_to_page(addr)	(mem_map + (((unsigned long)(addr)-PAGE_OFFSET) >> PAGE_SHIFT))
+//page描述符 -> 线性地址
 #define page_to_virt(page)	((((page) - mem_map) << PAGE_SHIFT) + PAGE_OFFSET)
 
+//pfn -> page描述符
 #define pfn_to_page(pfn)	virt_to_page(pfn_to_virt(pfn))
+//page描述符 -> pfn
 #define page_to_pfn(page)	virt_to_pfn(page_to_virt(page))
 #define pfn_valid(pfn)	        ((pfn) < max_mapnr)
 

@@ -22,8 +22,19 @@
 
 #include "internal.h"
 
+/*
+x86中，max_low_pfn变量是由find_max_low_pfn函数计算并且初始化的，
+它被初始化成ZONE_NORMAL的最后一个page的位置。
+这个位置是kernel可以直接访问的物理内存, 
+也是关系到kernel/userspace通过“PAGE_OFFSET宏”把线性地址内存空间分开的内存地址位置
+*/
 unsigned long max_low_pfn;
+/*
+系统可用的第一个pfn是min_low_pfn变量, 
+开始于_end标号的后面, 也就是kernel结束的地方
+*/
 unsigned long min_low_pfn;
+/*系统可用的最后一个PFN是max_pfn变量*/
 unsigned long max_pfn;
 
 #ifdef CONFIG_CRASH_DUMP
@@ -91,6 +102,7 @@ static void __init link_bootmem(bootmem_data_t *bdata)
 }
 
 /*
+	初始化bootmem内存分配器的核心；初始化bootmem_data_t的变量
  * Called once to set up the allocator itself.
  */
 static unsigned long __init init_bootmem_core(bootmem_data_t *bdata,
@@ -99,16 +111,19 @@ static unsigned long __init init_bootmem_core(bootmem_data_t *bdata,
 	unsigned long mapsize;
 
 	mminit_validate_memmodel_limits(&start, &end);
-	bdata->node_bootmem_map = phys_to_virt(PFN_PHYS(mapstart));
-	bdata->node_min_pfn = start;
-	bdata->node_low_pfn = end;
-	link_bootmem(bdata);
+	bdata->node_bootmem_map = phys_to_virt(PFN_PHYS(mapstart)); //位图
+	bdata->node_min_pfn = start;  //起始页框
+	bdata->node_low_pfn = end;    //结束页框
+	link_bootmem(bdata);  //将多个bootmem_data_t链接到bdata_list链表中，UMA只有一个
 
 	/*
 	 * Initially all pages are reserved - setup_arch() has to
 	 * register free RAM areas explicitly.
 	 */
+	/* 计算分配器中可用的内存页所需的BIT位数，
+	就是一个页占用一个BIT的话，需要多少个bit位,然后按字对齐*/
 	mapsize = bootmap_bytes(end - start);
+	/* 调用memset将所有的页标识为已经使用 */
 	memset(bdata->node_bootmem_map, 0xff, mapsize);
 
 	bdebug("nid=%td start=%lx map=%lx end=%lx mapsize=%lx\n",
@@ -217,17 +232,19 @@ unsigned long __init free_all_memory_core_early(int nodeid)
 	return count;
 }
 #else
+/* 释放bdata启动内存块中所有页框到页框分配器 */
 static unsigned long __init free_all_bootmem_core(bootmem_data_t *bdata)
 {
 	int aligned;
 	struct page *page;
 	unsigned long start, end, pages, count = 0;
 
+	/* 此bootmem没有位图，也就是没有管理内存 */
 	if (!bdata->node_bootmem_map)
 		return 0;
 
-	start = bdata->node_min_pfn;
-	end = bdata->node_low_pfn;
+	start = bdata->node_min_pfn;  /* 此bootmem包含的开始页框 */
+	end = bdata->node_low_pfn;    /* 此bootmem包含的结束页框 */
 
 	/*
 	 * If the start is aligned to the machines wordsize, we might
@@ -238,24 +255,33 @@ static unsigned long __init free_all_bootmem_core(bootmem_data_t *bdata)
 	bdebug("nid=%td start=%lx end=%lx aligned=%d\n",
 		bdata - bootmem_node_data, start, end, aligned);
 
+	/* 释放 bdata->node_min_pfn 到 bdata->node_low_pfn 之间空闲的页框到伙伴系统 */
 	while (start < end) {
 		unsigned long *map, idx, vec;
 
-		map = bdata->node_bootmem_map;
+		map = bdata->node_bootmem_map;  /* 此bootmem的位图 */
 		idx = start - bdata->node_min_pfn;
+
+		/* 做个整理（进行对齐），因为有可能start并不是按long位数对其的，有可能出现在了vec的中间位数 */
 		vec = ~map[idx / BITS_PER_LONG];
 
+		/* 如果检查的这一块内存块（内存块大小为BITS_PER_LONG）全是空的，则一次性释放 */
 		if (aligned && vec == ~0UL && start + BITS_PER_LONG < end) {
+			/* 这一块长度的内存块都为空闲的，计算这块内存的order，如果这块内存块长度是8个页框，那order就是3(2的3次方) */
 			int order = ilog2(BITS_PER_LONG);
 
+			/* 从start开始，释放2的order次方的页框到伙伴系统 */
 			__free_pages_bootmem(pfn_to_page(start), order);
-			count += BITS_PER_LONG;
+			count += BITS_PER_LONG;  /* count用来记录总共释放的页框 */
 		} else {
+			/* 内存块中有部分是页框是空的，一页一页释放 */
 			unsigned long off = 0;
 
 			while (vec && off < BITS_PER_LONG) {
 				if (vec & 1) {
+					/* 获取页框描述符，页框号实际上就是页描述符在mem_map的偏移量 */
 					page = pfn_to_page(start + off);
+					/* 将此页释放到伙伴系统 */
 					__free_pages_bootmem(page, 0);
 					count++;
 				}
@@ -297,6 +323,8 @@ unsigned long __init free_all_bootmem_node(pg_data_t *pgdat)
 }
 
 /**
+ 	释放所有启动后不需要的内存页框到伙伴系统
+
  * free_all_bootmem - release free pages to the buddy allocator
  *
  * Returns the number of pages actually released.
@@ -314,11 +342,15 @@ unsigned long __init free_all_bootmem(void)
 	return free_all_memory_core_early(MAX_NUMNODES);
 #else
 	unsigned long total_pages = 0;
+	/* 系统会为每个node分配一个这种结构，这个管理着node中所有页框，可以叫做bootmem分配器 */
 	bootmem_data_t *bdata;
 
+	/* 遍历所有需要释放的启动内存数据块 */
 	list_for_each_entry(bdata, &bdata_list, list)
+	 	/* 释放bdata启动内存块中所有页框到页框分配器 */
 		total_pages += free_all_bootmem_core(bdata);
 
+	/* 返回总共释放的页数量 */
 	return total_pages;
 #endif
 }
@@ -678,6 +710,7 @@ static void * __init alloc_arch_preferred_bootmem(bootmem_data_t *bdata,
 }
 #endif
 
+//申请在boot期间需要的内存（size）,核心操作
 static void * __init ___alloc_bootmem_nopanic(unsigned long size,
 					unsigned long align,
 					unsigned long goal,
@@ -707,6 +740,7 @@ restart:
 	void *region;
 
 restart:
+	//alloc_arch_preferred_bootmem同样调用了alloc_bootmem_core
 	region = alloc_arch_preferred_bootmem(NULL, size, align, goal, limit);
 	if (region)
 		return region;
@@ -716,7 +750,7 @@ restart:
 			continue;
 		if (limit && bdata->node_min_pfn >= PFN_DOWN(limit))
 			break;
-
+		//核心
 		region = alloc_bootmem_core(bdata, size, align, goal, limit);
 		if (region)
 			return region;
@@ -756,6 +790,7 @@ void * __init __alloc_bootmem_nopanic(unsigned long size, unsigned long align,
 	return ___alloc_bootmem_nopanic(size, align, goal, limit);
 }
 
+//申请在boot期间需要的内存（size）
 static void * __init ___alloc_bootmem(unsigned long size, unsigned long align,
 					unsigned long goal, unsigned long limit)
 {
@@ -772,11 +807,13 @@ static void * __init ___alloc_bootmem(unsigned long size, unsigned long align,
 }
 
 /**
+	申请在boot期间需要的内存（size）
  * __alloc_bootmem - allocate boot memory
- * @size: size of the request in bytes
- * @align: alignment of the region
- * @goal: preferred starting address of the region
+ * @size: size of the request in bytes  内存区长度
+ * @align: alignment of the region  对齐方式
+ * @goal: preferred starting address of the region 起始地址
  *
+ 	如果在第一个NUMA节点中无法申请到足够的内存，则进入后备队列中申请
  * The goal is dropped if it can not be satisfied and the allocation will
  * fall back to memory below @goal.
  *
@@ -793,6 +830,7 @@ void * __init __alloc_bootmem(unsigned long size, unsigned long align,
 	limit = -1UL;
 #endif
 
+	//注意看，并不是同一个函数，此函数有三个下划线
 	return ___alloc_bootmem(size, align, goal, limit);
 }
 

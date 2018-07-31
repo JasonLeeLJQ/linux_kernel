@@ -11,7 +11,7 @@ struct vm_area_struct;
 
 /*
  * GFP bitmasks..
- * gfp_mask标志：区修饰符，可以指定分配器从哪个区域分配内存。
+ * gfp_mask标志：区(zone)修饰符，可以指定分配器从哪个区域分配内存。
  * Zone modifiers (see linux/mmzone.h - low three bits)
  *
  * Do not put any conditional on these. If necessary modify the definitions

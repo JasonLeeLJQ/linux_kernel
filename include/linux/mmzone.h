@@ -49,6 +49,7 @@
 
 extern int page_group_by_mobility_disabled;
 
+//获得对应page的迁移类型，以便于插入到伙伴系统对应的链表中
 static inline int get_pageblock_migratetype(struct page *page)
 {
 	return get_pageblock_flags_group(page, PB_migrate, PB_migrate_end);
@@ -345,7 +346,7 @@ struct zone {
 	 * Flags for a pageblock_nr_pages block. See pageblock-flags.h.
 	 * In SPARSEMEM, this map is stored in struct mem_section
 	 */
-	unsigned long		*pageblock_flags;
+	unsigned long		*pageblock_flags; //zone中page的位图区域
 #endif /* CONFIG_SPARSEMEM */
 
 
@@ -596,7 +597,7 @@ struct zoneref {
  */
 struct zonelist {
 	struct zonelist_cache *zlcache_ptr;		     // NULL or &zlcache
-	struct zoneref _zonerefs[MAX_ZONES_PER_ZONELIST + 1];
+	struct zoneref _zonerefs[MAX_ZONES_PER_ZONELIST + 1]; //？？？为什么要+1
 #ifdef CONFIG_NUMA
 	struct zonelist_cache zlcache;			     // optional ...
 #endif
@@ -630,6 +631,7 @@ extern struct page *mem_map;
 struct bootmem_data;
 typedef struct pglist_data {
 	struct zone node_zones[MAX_NR_ZONES];  //包含节点中各内存域的数据结构struct zone
+	//对于UMA，node_zonelists数组只有一个元素；而NUMA有两个
 	struct zonelist node_zonelists[MAX_ZONELISTS]; //指定了备用节点及其内存域的列表，以便在当前节点没有可用空间时，在备用节点分配内存
 	int nr_zones;  //节点中不同内存域的数目
 #ifdef CONFIG_FLAT_NODE_MEM_MAP	/* means !SPARSEMEM */

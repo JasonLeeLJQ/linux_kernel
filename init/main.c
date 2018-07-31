@@ -511,6 +511,9 @@ void __init __weak thread_info_cache_init(void)
 
 /*
  * Set up kernel memory allocators
+ 	建立了内核的内存分配器, 
+	其中通过mem_init停用bootmem分配器并迁移到实际的内存管理器(比如伙伴系统)
+	然后调用kmem_cache_init函数初始化内核内部用于小块内存区的分配器
  */
 static void __init mm_init(void)
 {
@@ -520,14 +523,15 @@ static void __init mm_init(void)
 	 */
 	page_cgroup_init_flatmem();
 	mem_init();
-	kmem_cache_init();
-	pgtable_cache_init();
-	vmalloc_init();
+	kmem_cache_init();  //初始化slab分配器
+	pgtable_cache_init(); //x86_32什么都不做
+	vmalloc_init();     //初始化非连续内存区
 }
 
+/* 开始内核启动 */
 asmlinkage void __init start_kernel(void)
 {
-	char * command_line;
+	char * command_line;  //命令行，用来存放bootloader传递过来的参数
 	extern struct kernel_param __start___param[], __stop___param[];
 
 	smp_setup_processor_id();
@@ -559,15 +563,17 @@ asmlinkage void __init start_kernel(void)
 	boot_cpu_init();
 	page_address_init();
 	printk(KERN_NOTICE "%s", linux_banner);
-	setup_arch(&command_line);
+	/*在boot期间，初始化特定体系结构，如zone，zonelist; 
+	  其中一项任务是负责初始化自举分配器*/
+	setup_arch(&command_line);  
 	mm_init_owner(&init_mm, &init_task);
 	setup_command_line(command_line);
 	setup_nr_cpu_ids();
 	setup_per_cpu_areas();
 	smp_prepare_boot_cpu();	/* arch-specific boot-cpu hooks */
 
-	build_all_zonelists();
-	page_alloc_init();
+	build_all_zonelists();  //建立zonelist及备用zonelist
+	page_alloc_init();   //设置内存页分配通知器
 
 	printk(KERN_NOTICE "Kernel command line: %s\n", boot_command_line);
 	parse_early_param();
@@ -579,9 +585,13 @@ asmlinkage void __init start_kernel(void)
 	 * kmem_cache_init()
 	 */
 	pidhash_init();
-	vfs_caches_init_early();
+	vfs_caches_init_early();  //前期虚拟文件系统(vfs)的缓存初始化
 	sort_main_extable();
 	trap_init();
+	/*
+	内存管理的初始化,初始化内存并计算可用内存大小;
+	标记哪些内存可以使用，并且告诉系统有多少内存可以使用，当然是除了内核使用的内存以外
+	*/
 	mm_init();
 	/*
 	 * Set up the scheduler prior starting any interrupts (such as the
@@ -620,7 +630,7 @@ asmlinkage void __init start_kernel(void)
 	/* Interrupts are enabled now so all GFP allocations are safe. */
 	gfp_allowed_mask = __GFP_BITS_MASK;
 
-	kmem_cache_init_late();
+	kmem_cache_init_late();   // 初始化SLAB缓存分配器 
 
 	/*
 	 * HACK ALERT! This is early. We're enabling the console before
@@ -656,7 +666,7 @@ asmlinkage void __init start_kernel(void)
 	kmemleak_init();
 	debug_objects_mem_init();
 	idr_init_cache();
-	setup_per_cpu_pageset();
+	setup_per_cpu_pageset();  //初始化，每CPU页框高速缓存
 	numa_policy_init();
 	if (late_time_init)
 		late_time_init();

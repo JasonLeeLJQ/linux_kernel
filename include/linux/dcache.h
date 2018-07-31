@@ -87,36 +87,36 @@ full_name_hash(const unsigned char *name, unsigned int len)
 #endif
 
 struct dentry {
-	atomic_t d_count;
-	unsigned int d_flags;		/* protected by d_lock */
-	spinlock_t d_lock;		/* per dentry lock */
+	atomic_t d_count;  //引用计数
+	unsigned int d_flags;		/* protected by d_lock 目录项高速缓存标志*/
+	spinlock_t d_lock;		/* per dentry lock 保护目录项对象的自旋锁*/
 	int d_mounted;
-	struct inode *d_inode;		/* Where the name belongs to - NULL is
+	struct inode *d_inode;		/* Where the name belongs to - NULL is 与文件名关联的索引节点
 					 * negative */
 	/*
 	 * The next three fields are touched by __d_lookup.  Place them here
 	 * so they all fit in a cache line.
 	 */
-	struct hlist_node d_hash;	/* lookup hash list */
-	struct dentry *d_parent;	/* parent directory */
-	struct qstr d_name;
+	struct hlist_node d_hash;	/* lookup hash list 指向哈希表*/
+	struct dentry *d_parent;	/* parent directory 父目录的目录项对象*/
+	struct qstr d_name;  //文件名
 
-	struct list_head d_lru;		/* LRU list */
+	struct list_head d_lru;		/* LRU list 指向未使用的目录项的链表 */
 	/*
 	 * d_child and d_rcu can share memory
 	 */
 	union {
-		struct list_head d_child;	/* child of parent list */
+		struct list_head d_child;	/* child of parent list 指向同一父目录下的兄弟目录项*/
 	 	struct rcu_head d_rcu;
 	} d_u;
-	struct list_head d_subdirs;	/* our children */
+	struct list_head d_subdirs;	/* our children 指向该目录项的子目录项的链表头*/
 	struct list_head d_alias;	/* inode alias list */
 	unsigned long d_time;		/* used by d_revalidate */
-	const struct dentry_operations *d_op;
-	struct super_block *d_sb;	/* The root of the dentry tree */
-	void *d_fsdata;			/* fs-specific data */
+	const struct dentry_operations *d_op;   //目录项的方法
+	struct super_block *d_sb;	/* The root of the dentry tree 文件的超级块对象*/
+	void *d_fsdata;			/* fs-specific data 特定文件系统的数据*/
 
-	unsigned char d_iname[DNAME_INLINE_LEN_MIN];	/* small names */
+	unsigned char d_iname[DNAME_INLINE_LEN_MIN];	/* small names 存放短文件名的空间*/
 };
 
 /*

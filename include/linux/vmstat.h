@@ -156,6 +156,10 @@ static inline unsigned long global_page_state(enum zone_stat_item item)
 	return x;
 }
 
+/* 
+	查询zone中vm_stat变量的信息，这里面维护了该zone的统计信息
+	可以给item参数赋值NR_FREE_PAGES，即可查询空闲页的数目
+*/
 static inline unsigned long zone_page_state(struct zone *zone,
 					enum zone_stat_item item)
 {

@@ -498,7 +498,7 @@ void page_cache_sync_readahead(struct address_space *mapping,
 			       struct file_ra_state *ra, struct file *filp,
 			       pgoff_t offset, unsigned long req_size)
 {
-	/* no read-ahead */
+	/* no read-ahead 禁止了预读*/
 	if (!ra->ra_pages)
 		return;
 

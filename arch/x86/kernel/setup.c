@@ -981,6 +981,7 @@ void __init setup_arch(char **cmdline_p)
 		k8 = !k8_numa_init(0, max_pfn);
 #endif
 
+	/* bootmem内存分配器的初始化 */
 	initmem_init(0, max_pfn, acpi, k8);
 #ifndef CONFIG_NO_BOOTMEM
 	early_res_to_bootmem(0, max_low_pfn<<PAGE_SHIFT);
@@ -992,6 +993,9 @@ void __init setup_arch(char **cmdline_p)
 	kvmclock_init();
 #endif
 
+	/* 伙伴系统初始化过程,初始化pglist_data、zone、page等结构
+	start_kernel() -> setup_arch() -> paging_init()
+	*/
 	x86_init.paging.pagetable_setup_start(swapper_pg_dir);
 	paging_init();
 	x86_init.paging.pagetable_setup_done(swapper_pg_dir);

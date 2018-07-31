@@ -28,12 +28,18 @@ extern unsigned long saved_max_pfn;
  * node_bootmem_map is a map pointer - the bits represent all physical 
  * memory pages (including holes) on the node.
  */
+ /* bootmem分配器结点(管理着一整块连续内存，可以管理一个node中所有的物理内存)，启动时使用 */
 typedef struct bootmem_data {
+	/* 此块内存开始第一个页框号,UMA系统下是0 */
 	unsigned long node_min_pfn;
+	/* 此块内存结束页框号，如果是32位系统下此保存的是 ZONE_NORMAL最后一个页框号 */
 	unsigned long node_low_pfn;
+	/* 指向位图内存区，node中所有ZONE_HIGHMEM之前的页框都在这里面有一个位，每次需要分配内存时就会扫描找出一个空闲页框，空洞的内存也会占用位，不过空洞的内存应该设置为已分配 */
 	void *node_bootmem_map;
+	/* 上一次分配的页的编号。如果没有请求小于一个页，则它用作该页内部的偏移量 */
 	unsigned long last_end_off;
 	unsigned long hint_idx;
+	/* 链入bdata_list结构链表,NUMA所有node都在该链表中 */
 	struct list_head list;
 } bootmem_data_t;
 

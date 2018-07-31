@@ -417,9 +417,9 @@ static void __init permanent_kmaps_init(pgd_t *pgd_base)
 static void __init add_one_highpage_init(struct page *page)
 {
 	ClearPageReserved(page);
-	init_page_count(page);
+	init_page_count(page);  /* 将页面的count置位1，便于回收（只有count不为0才能被回收） */
 	__free_page(page);
-	totalhigh_pages++;
+	totalhigh_pages++;  /* 高端内存页数量++ */
 }
 
 struct add_highpages_data {
@@ -437,17 +437,18 @@ static int __init add_highpages_work_fn(unsigned long start_pfn,
 
 	data = (struct add_highpages_data *)datax;
 
-	final_start_pfn = max(start_pfn, data->start_pfn);
-	final_end_pfn = min(end_pfn, data->end_pfn);
+	final_start_pfn = max(start_pfn, data->start_pfn); //初始页框取最大
+	final_end_pfn = min(end_pfn, data->end_pfn);		//结束页框取最小
 	if (final_start_pfn >= final_end_pfn)
 		return 0;
 
+	//遍历所有的页框，逐个释放到伙伴系统中
 	for (node_pfn = final_start_pfn; node_pfn < final_end_pfn;
 	     node_pfn++) {
 		if (!pfn_valid(node_pfn))
 			continue;
-		page = pfn_to_page(node_pfn);
-		add_one_highpage_init(page);
+		page = pfn_to_page(node_pfn);  //得到页描述符指针
+		add_one_highpage_init(page);   //释放page到伙伴系统
 	}
 
 	return 0;
@@ -462,6 +463,7 @@ void __init add_highpages_with_active_regions(int nid, unsigned long start_pfn,
 	data.start_pfn = start_pfn;
 	data.end_pfn = end_pfn;
 
+	/* 传递了一个函数指针add_highpages_work_fn，该函数才是关键 */
 	work_with_active_regions(nid, add_highpages_work_fn, &data);
 }
 
@@ -729,9 +731,11 @@ void __init initmem_init(unsigned long start_pfn, unsigned long end_pfn,
 #endif
 	__vmalloc_start_set = true;
 
+	/* 找到低端内存区中最大的页帧号 */
 	printk(KERN_NOTICE "%ldMB LOWMEM available.\n",
-			pages_to_mb(max_low_pfn));
+			pages_to_mb(max_low_pfn));  //max_low_pfn保存着可映射的最高页的编号
 
+	/* 初始化bootmem自举内存分配器 */
 	setup_bootmem_allocator();
 }
 #endif /* !CONFIG_NEED_MULTIPLE_NODES */
@@ -759,6 +763,7 @@ static unsigned long __init setup_node_bootmem(int nodeid,
 	unsigned long bootmap_size;
 
 	/* don't touch min_low_pfn */
+	/* 在boot内存中注册一个bootmem_data_t节点(自举内存分配器)，并赋初值 */
 	bootmap_size = init_bootmem_node(NODE_DATA(nodeid),
 					 bootmap >> PAGE_SHIFT,
 					 start_pfn, end_pfn);
@@ -772,6 +777,7 @@ static unsigned long __init setup_node_bootmem(int nodeid,
 }
 #endif
 
+/* 初始化bootmem分配器 */
 void __init setup_bootmem_allocator(void)
 {
 #ifndef CONFIG_NO_BOOTMEM
@@ -780,9 +786,9 @@ void __init setup_bootmem_allocator(void)
 	/*
 	 * Initialize the boot-time allocator (with low memory only):
 	 */
-	bootmap_size = bootmem_bootmap_pages(max_low_pfn)<<PAGE_SHIFT;
+	bootmap_size = bootmem_bootmap_pages(max_low_pfn)<<PAGE_SHIFT;  //计算位图的大小
 	bootmap = find_e820_area(0, max_pfn_mapped<<PAGE_SHIFT, bootmap_size,
-				 PAGE_SIZE);
+				 PAGE_SIZE);  //为位图寻找一个空闲的内存区域（在e820map数组中查找）
 	if (bootmap == -1L)
 		panic("Cannot find bootmem map of size %ld\n", bootmap_size);
 	reserve_early(bootmap, bootmap + bootmap_size, "BOOTMAP");
@@ -797,15 +803,15 @@ void __init setup_bootmem_allocator(void)
 		 unsigned long start_pfn, end_pfn;
 
 #ifdef CONFIG_NEED_MULTIPLE_NODES
-		start_pfn = node_start_pfn[nodeid];
+		start_pfn = node_start_pfn[nodeid]; //UMA中 == 0
 		end_pfn = node_end_pfn[nodeid];
 		if (start_pfn > max_low_pfn)
 			continue;
 		if (end_pfn > max_low_pfn)
 			end_pfn = max_low_pfn;
 #else
-		start_pfn = 0;
-		end_pfn = max_low_pfn;
+		start_pfn = 0;    //UMA系统，开始的页框号==0
+		end_pfn = max_low_pfn; //结束页框号
 #endif
 		bootmap = setup_node_bootmem(nodeid, start_pfn, end_pfn,
 						 bootmap);
@@ -816,6 +822,7 @@ void __init setup_bootmem_allocator(void)
 }
 
 /*
+ * 建立页表，并初始化zone
  * paging_init() sets up the page tables - note that the first 8MB are
  * already mapped by head.S.
  *
@@ -824,7 +831,7 @@ void __init setup_bootmem_allocator(void)
  */
 void __init paging_init(void)
 {
-	pagetable_init();
+	pagetable_init();  //建立页表并初始化
 
 	__flush_tlb_all();
 
@@ -834,7 +841,7 @@ void __init paging_init(void)
 	 * NOTE: at this point the bootmem allocator is fully available.
 	 */
 	sparse_init();
-	zone_sizes_init();
+	zone_sizes_init();  //初始化zone	
 }
 
 /*
@@ -875,6 +882,8 @@ void __init mem_init(void)
 	BUG_ON(!mem_map);
 #endif
 	/* this will put all low memory onto the freelists */
+	/*销毁bootmem分配器，释放bootmem分配器管理的空闲页框和bootmem的位图所占用的页框，
+			 并计入totalram_pages*/
 	totalram_pages += free_all_bootmem();
 
 	reservedpages = 0;
@@ -885,6 +894,7 @@ void __init mem_init(void)
 		if (page_is_ram(tmp) && PageReserved(pfn_to_page(tmp)))
 			reservedpages++;
 
+	/*处理高端内存页框*/
 	set_highmem_pages_init();
 
 	codesize =  (unsigned long) &_etext - (unsigned long) &_text;
@@ -960,6 +970,8 @@ void __init mem_init(void)
 		test_wp_bit();
 
 	save_pg_dir();
+	
+	/*将前3GB线性地址(即用户地址空间)对应的pgd全局目录项清空*/
 	zap_low_mappings(true);
 }
 
